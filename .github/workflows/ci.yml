@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - "**"
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  notebook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install PyTorch (CPU)
+        run: pip install --index-url https://download.pytorch.org/whl/cpu 'torch>=2.13.0'
+
+      - name: Install requirements
+        run: pip install -r requirements.txt
+
+      - name: Check notebooks
+        run: marimo check notebook.py
+
+      - name: Run notebook headless
+        run: |
+          set +e
+          DYT_AUTORUN=1 DYT_STEPS=24 python notebook.py >notebook.stdout 2>notebook.stderr
+          status=$?
+          set -e
+          echo "----- stdout -----"
+          cat notebook.stdout
+          echo "----- stderr -----"
+          cat notebook.stderr >&2
+          if [ "$status" -ne 0 ]; then
+            echo "Notebook failed with exit code ${status}"
+            exit "$status"
+          fi
+          if grep -E -i -n 'traceback|error|exception' notebook.stdout notebook.stderr; then
+            echo "Notebook produced error output"
+            exit 1
+          fi
